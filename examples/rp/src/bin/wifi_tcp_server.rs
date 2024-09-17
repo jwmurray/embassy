@@ -6,6 +6,7 @@
 #![allow(async_fn_in_trait)]
 
 use core::str::from_utf8;
+// use heapless::String;
 
 use cyw43::JoinOptions;
 use cyw43_pio::PioSpi;
@@ -18,18 +19,23 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use embedded_io_async::Write;
 use rand::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+type LedType = Mutex<ThreadModeRawMutex, Option<Output<'static>>>;
+static LED: LedType = Mutex::new(None);
+
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
-const WIFI_NETWORK: &str = "LadronDeWifi";
-const WIFI_PASSWORD: &str = "MBfcaedHmyRFE4kaQ1O5SsY8";
+const WIFI_NETWORK: &str = "QuietEntry";
+const WIFI_PASSWORD: &str = "AAAAAAAAAA";
 
 #[embassy_executor::task]
 async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
@@ -55,8 +61,8 @@ async fn main(spawner: Spawner) {
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
     //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
     //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+    // let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    // let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
@@ -83,7 +89,7 @@ async fn main(spawner: Spawner) {
     // Generate random seed
     let seed = rng.next_u64();
 
-    // Init network stack
+    // Init network stack that runs in the background.  This, inter alia, handles ping responses in the background.
     static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
     let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
 
@@ -116,7 +122,7 @@ async fn main(spawner: Spawner) {
 
     loop {
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(10)));
+        socket.set_timeout(Some(Duration::from_secs(100)));
 
         control.gpio_set(0, false).await;
         info!("Listening on TCP:1234...");
@@ -133,13 +139,25 @@ async fn main(spawner: Spawner) {
                 Ok(0) => {
                     warn!("read EOF");
                     break;
+                    // continue;
                 }
                 Ok(n) => n,
                 Err(e) => {
                     warn!("read error: {:?}", e);
-                    break;
+                    // break;
+                    continue;
                 }
             };
+
+            match from_utf8(&buf[..n]) {
+                Ok(s) => {
+                    info!("rx {}", s);
+                }
+                Err(_) => {
+                    info!("rx {:?}", &buf[..n]);
+                    continue;
+                }
+            }
 
             info!("rxd {}", from_utf8(&buf[..n]).unwrap());
 
@@ -147,7 +165,8 @@ async fn main(spawner: Spawner) {
                 Ok(()) => {}
                 Err(e) => {
                     warn!("write error: {:?}", e);
-                    break;
+                    // break;
+                    continue;
                 }
             };
         }
