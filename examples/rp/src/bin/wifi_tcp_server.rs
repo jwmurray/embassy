@@ -19,16 +19,16 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::mutex::Mutex;
+// use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+// use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use embedded_io_async::Write;
 use rand::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-type LedType = Mutex<ThreadModeRawMutex, Option<Output<'static>>>;
-static LED: LedType = Mutex::new(None);
+// type LedType = Mutex<ThreadModeRawMutex, Option<Output<'static>>>;
+// static LED: LedType = Mutex::new(None);
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
